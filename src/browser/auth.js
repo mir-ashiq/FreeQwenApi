@@ -8,6 +8,22 @@ const AUTH_SIGNIN_URL = 'https://chat.qwen.ai/auth?action=signin';
 
 const VERIFICATION_TIMEOUT = 300000;
 
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function getPage(context) {
+    if (context && typeof context.goto === 'function') {
+        return context;
+    } else if (context && typeof context.newPage === 'function') {
+        return await context.newPage();
+    } else {
+        throw new Error('Неверный контекст: не страница Puppeteer, не контекст Playwright');
+    }
+}
+
+function isPlaywright(context) {
+    return context && typeof context.newPage === 'function';
+}
+
 async function promptUser(question) {
     return new Promise(resolve => {
         process.stdout.write(question);
@@ -30,86 +46,104 @@ export async function checkAuthentication(context) {
             return true;
         }
 
-        const page = await context.newPage();
+        const page = await getPage(context);
+        const isPW = isPlaywright(context);
 
         console.log('Проверка авторизации...');
-        await page.goto(AUTH_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
-        await page.waitForLoadState('domcontentloaded');
+        
+        try {
+            await page.goto(AUTH_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
+            
+            if (isPW) {
+                await page.waitForLoadState('domcontentloaded');
+            }
+            
+            await delay(2000);
 
-        await page.waitForTimeout(2000);
+            const pageTitle = await page.title();
+            const hasVerification = pageTitle.includes('Verification');
 
-        const pageTitle = await page.title();
-        const hasVerification = pageTitle.includes('Verification');
+            if (hasVerification) {
+                console.log('Обнаружена страница верификации. Пожалуйста, пройдите верификацию вручную.');
+                await promptUser('После прохождения верификации нажмите ENTER для продолжения...');
+                console.log('Верификация подтверждена пользователем.');
+            }
 
-        if (hasVerification) {
-            console.log('Обнаружена страница верификации. Пожалуйста, пройдите верификацию вручную.');
+            let loginContainerCount = 0;
+            if (isPW) {
+                loginContainerCount = await page.locator('.login-container').count();
+            } else {
+                const loginElements = await page.$$('.login-container');
+                loginContainerCount = loginElements.length;
+            }
 
-            await promptUser('После прохождения верификации нажмите ENTER для продолжения...');
-            console.log('Верификация подтверждена пользователем.');
-        }
+            if (loginContainerCount === 0) {
+                console.log('======================================================');
+                console.log('               АВТОРИЗАЦИЯ ОБНАРУЖЕНА                 ');
+                console.log('======================================================');
 
-        const loginContainerCount = await page.locator('.login-container').count();
-
-        if (loginContainerCount === 0) {
-            console.log('======================================================');
-            console.log('               АВТОРИЗАЦИЯ ОБНАРУЖЕНА                 ');
-            console.log('======================================================');
-
-            setAuthenticationStatus(true);
-
-            await extractAuthToken(context, true);
-            await saveSession(context);
-
-            console.log('Сессия сохранена успешно!');
-
-            await page.close();
-
-            await restartBrowserInHeadlessMode();
-
-            return true;
-        } else {
-            console.log('------------------------------------------------------');
-            console.log('               НЕОБХОДИМА АВТОРИЗАЦИЯ                 ');
-            console.log('------------------------------------------------------');
-            console.log('Пожалуйста, выполните следующие действия:');
-            console.log('1. Войдите в систему через GitHub или другой способ в открытом браузере');
-            console.log('2. Если вас перенаправляет на GitHub, разрешите доступ');
-            console.log('3. Дождитесь завершения процесса авторизации в браузере');
-            console.log('4. После завершения авторизации нажмите ENTER в этой консоли');
-            console.log('------------------------------------------------------');
-
-            await promptUser('После успешной авторизации нажмите ENTER для продолжения...');
-            console.log('Пользователь подтвердил завершение авторизации.');
-
-            await page.reload({ waitUntil: 'domcontentloaded', timeout: 120000 });
-            await page.waitForLoadState('domcontentloaded');
-            await page.waitForTimeout(2000);
-
-            const loginElements = await page.locator('.login-container').count();
-            if (loginElements === 0) {
-                console.log('Авторизация подтверждена.');
                 setAuthenticationStatus(true);
+                
+                try {
+                    await extractAuthToken(context, true);
+                    await saveSession(context);
+                    console.log('Сессия обновлена');
+                } catch (e) {
+                    console.error('Не удалось обновить сессию:', e);
+                }
 
-                await saveSession(context);
-                await extractAuthToken(context, true);
+                if (isPW) {
+                    await page.close();
+                }
 
-                console.log('Сессия сохранена успешно!');
-                console.log('======================================================');
-                console.log('               АВТОРИЗАЦИЯ ВЫПОЛНЕНА!                 ');
-                console.log('======================================================');
-                console.log('Теперь вы можете использовать API через локальный прокси.');
-                console.log('======================================================');
-
-                await page.close();
-                await restartBrowserInHeadlessMode();
                 return true;
             } else {
-                console.log('Предупреждение: Даже после подтверждения, система не обнаружила авторизацию.');
-                console.log('Возможно, авторизация не была завершена корректно.');
-                console.log('Попробуйте снова или проверьте страницу браузера.');
-                setAuthenticationStatus(false);
-                return false;
+                console.log('------------------------------------------------------');
+                console.log('               НЕОБХОДИМА АВТОРИЗАЦИЯ                 ');
+                console.log('------------------------------------------------------');
+                console.log('Пожалуйста, выполните следующие действия:');
+                console.log('1. Войдите в систему через GitHub или другой способ в открытом браузере');
+                console.log('2. Дождитесь завершения процесса авторизации');
+                console.log('3. Нажмите ENTER в этой консоли');
+                console.log('------------------------------------------------------');
+
+                await promptUser('После успешной авторизации нажмите ENTER для продолжения...');
+                console.log('Пользователь подтвердил завершение авторизации.');
+
+                await page.reload({ waitUntil: 'domcontentloaded', timeout: 120000 });
+                await delay(3000);
+
+                let loginElements = 0;
+                if (isPW) {
+                    loginElements = await page.locator('.login-container').count();
+                } else {
+                    const elements = await page.$$('.login-container');
+                    loginElements = elements.length;
+                }
+
+                if (loginElements === 0) {
+                    console.log('Авторизация подтверждена.');
+                    setAuthenticationStatus(true);
+
+                    await saveSession(context);
+                    await extractAuthToken(context, true);
+
+                    if (isPW) {
+                        await page.close();
+                    }
+                    
+                    return true;
+                } else {
+                    console.log('Предупреждение: Авторизация не обнаружена.');
+                    setAuthenticationStatus(false);
+                    return false;
+                }
             }
+        } catch (error) {
+            if (isPW) {
+                await page.close().catch(() => {});
+            }
+            throw error;
         }
     } catch (error) {
         console.error('Ошибка при проверке авторизации:', error);
@@ -120,55 +154,63 @@ export async function checkAuthentication(context) {
 
 export async function startManualAuthentication(context, skipRestart = false) {
     try {
-        const page = await context.newPage();
+        const page = await getPage(context);
+        const isPW = isPlaywright(context);
 
         console.log('Открытие страницы для ручной авторизации...');
-        await page.goto(AUTH_SIGNIN_URL, { waitUntil: 'load', timeout: 120000 });
+        
+        try {
+            await page.goto(AUTH_SIGNIN_URL, { waitUntil: 'load', timeout: 120000 });
 
-        console.log('------------------------------------------------------');
-        console.log('               НЕОБХОДИМА АВТОРИЗАЦИЯ                 ');
-        console.log('------------------------------------------------------');
-        console.log('Пожалуйста, выполните следующие действия:');
-        console.log('1. Войдите в систему в открытом браузере');
-        console.log('2. Дождитесь завершения процесса авторизации в браузере');
-        console.log('3. После завершения авторизации нажмите ENTER в этой консоли');
-        console.log('------------------------------------------------------');
+            console.log('------------------------------------------------------');
+            console.log('               НЕОБХОДИМА АВТОРИЗАЦИЯ                 ');
+            console.log('------------------------------------------------------');
+            console.log('Пожалуйста, выполните следующие действия:');
+            console.log('1. Войдите в систему в открытом браузере');
+            console.log('2. Дождитесь завершения процесса авторизации');
+            console.log('3. Нажмите ENTER в этой консоли');
+            console.log('------------------------------------------------------');
 
-        await promptUser('После успешной авторизации нажмите ENTER для продолжения...');
-        console.log('Пользователь подтвердил завершение авторизации. Подождите...');
+            await promptUser('После успешной авторизации нажмите ENTER для продолжения...');
+            
+            await page.goto(AUTH_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
+            await delay(2000);
 
-        await page.goto(AUTH_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
-        await page.waitForLoadState('domcontentloaded');
-        await page.waitForTimeout(2000);
-
-        const loginElements = await page.locator('.login-container').count();
-
-        if (loginElements === 0) {
-            console.log('Авторизация подтверждена.');
-            setAuthenticationStatus(true);
-
-            await saveSession(context);
-
-            await extractAuthToken(context, true);
-
-            console.log('Сессия сохранена успешно!');
-            console.log('======================================================');
-            console.log('               АВТОРИЗАЦИЯ ВЫПОЛНЕНА!                 ');
-            console.log('======================================================');
-            console.log('Вы можете использовать API через локальный прокси.');
-            console.log('======================================================');
-
-            await page.close();
-            if (!skipRestart) {
-                await restartBrowserInHeadlessMode();
+            let loginElements = 0;
+            if (isPW) {
+                loginElements = await page.locator('.login-container').count();
+            } else {
+                const elements = await page.$$('.login-container');
+                loginElements = elements.length;
             }
-            return true;
-        } else {
-            console.log('Предупреждение: Даже после подтверждения, система не обнаружила авторизацию.');
-            console.log('Возможно, авторизация не была завершена корректно.');
-            console.log('Попробуйте снова или проверьте страницу браузера.');
-            setAuthenticationStatus(false);
-            return false;
+
+            if (loginElements === 0) {
+                console.log('Авторизация подтверждена.');
+                setAuthenticationStatus(true);
+
+                await saveSession(context);
+                await extractAuthToken(context, true);
+
+                console.log('Сессия сохранена успешно!');
+
+                if (isPW) {
+                    await page.close();
+                }
+                
+                if (!skipRestart) {
+                    await restartBrowserInHeadlessMode();
+                }
+                return true;
+            } else {
+                console.log('Авторизация не удалась.');
+                setAuthenticationStatus(false);
+                return false;
+            }
+        } catch (error) {
+            if (isPW) {
+                await page.close().catch(() => {});
+            }
+            throw error;
         }
     } catch (error) {
         console.error('Ошибка при ручной авторизации:', error);
@@ -180,24 +222,13 @@ export async function startManualAuthentication(context, skipRestart = false) {
 export async function checkVerification(page) {
     try {
         const pageTitle = await page.title();
-        const hasVerification = pageTitle.includes('Verification');
-
-        if (hasVerification) {
+        if (pageTitle.includes('Verification')) {
             console.log('Обнаружена страница верификации');
-            console.log('Пожалуйста, пройдите верификацию вручную в открытом браузере...');
-
-            await promptUser('После прохождения верификации нажмите ENTER для продолжения...');
-            console.log('Верификация подтверждена пользователем.');
-
-            console.log('======================================================');
-            console.log('               ВЕРИФИКАЦИЯ ПРОЙДЕНА!                  ');
-            console.log('======================================================');
+            await promptUser('Пройдите верификацию и нажмите ENTER...');
             return true;
         }
-
         return false;
     } catch (error) {
-        console.error('Ошибка при проверке верификации:', error);
         return false;
     }
-} 
+}
