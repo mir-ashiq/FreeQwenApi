@@ -16,6 +16,7 @@ const __dirname = path.dirname(__filename);
 const CHAT_API_URL_V2 = 'https://chat.qwen.ai/api/v2/chat/completions';
 const CREATE_CHAT_URL = 'https://chat.qwen.ai/api/v2/chats/new';
 const CHAT_PAGE_URL = 'https://chat.qwen.ai/';
+const TASK_STATUS_URL = 'https://chat.qwen.ai/api/v1/tasks/status';
 
 const MODELS_FILE = path.join(__dirname, '..', 'AvaibleModels.txt');
 const AUTH_KEYS_FILE = path.join(__dirname, '..', 'Authorization.txt');
@@ -84,6 +85,97 @@ export const pagePool = {
         this.pages = [];
     }
 };
+
+/**
+ * Poll task status for video/image generation
+ * @param {string} taskId - Task ID to poll
+ * @param {object} page - Puppeteer page instance
+ * @param {string} token - Auth token
+ * @param {number} maxAttempts - Maximum polling attempts
+ * @param {number} interval - Polling interval in ms
+ * @returns {Promise<object>} - Task result
+ */
+export async function pollTaskStatus(taskId, page, token, maxAttempts = 90, interval = 2000) {
+    console.log(`📊 Начинаем опрос статуса задачи: ${taskId}`);
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            const statusUrl = `${TASK_STATUS_URL}/${taskId}`;
+            
+            const result = await page.evaluate(async (data) => {
+                const response = await fetch(data.url, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${data.token}`,
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    return {
+                        success: false,
+                        status: response.status,
+                        error: await response.text()
+                    };
+                }
+                
+                return {
+                    success: true,
+                    data: await response.json()
+                };
+            }, { url: statusUrl, token });
+            
+            if (!result.success) {
+                console.error(`❌ Ошибка при проверке статуса (попытка ${attempt}/${maxAttempts}):`, result.error);
+                await delay(interval);
+                continue;
+            }
+            
+            const taskData = result.data;
+            const taskStatus = taskData.task_status || taskData.status || 'unknown';
+            console.log(`⏳ Статус задачи (${attempt}/${maxAttempts}): ${taskStatus}`);
+            
+            // Check if task is completed
+            if (taskStatus === 'completed' || taskStatus === 'success') {
+                console.log('✅ Задача завершена успешно!');
+                return {
+                    success: true,
+                    status: 'completed',
+                    data: taskData
+                };
+            }
+            
+            // Check if task failed
+            if (taskStatus === 'failed' || taskStatus === 'error') {
+                console.error('❌ Задача завершилась с ошибкой');
+                return {
+                    success: false,
+                    status: 'failed',
+                    error: taskData.error || taskData.message || 'Task failed',
+                    data: taskData
+                };
+            }
+            
+            // Task still in progress
+            if (attempt < maxAttempts) {
+                await delay(interval);
+            }
+            
+        } catch (error) {
+            console.error(`❌ Ошибка при опросе задачи (попытка ${attempt}/${maxAttempts}):`, error);
+            if (attempt < maxAttempts) {
+                await delay(interval);
+            }
+        }
+    }
+    
+    console.error(`⏰ Превышен лимит попыток (${maxAttempts}) для задачи ${taskId}`);
+    return {
+        success: false,
+        status: 'timeout',
+        error: 'Task polling timeout exceeded'
+    };
+}
 
 export async function extractAuthToken(context, forceRefresh = false) {
     if (authToken && !forceRefresh) {
@@ -202,7 +294,7 @@ export function getApiKeys() {
     return authKeys;
 }
 
-export async function sendMessage(message, model = "qwen-max-latest", chatId = null, parentId = null, files = null, tools = null, toolChoice = null, systemMessage = null) {
+export async function sendMessage(message, model = "qwen-max-latest", chatId = null, parentId = null, files = null, tools = null, toolChoice = null, systemMessage = null, chatType = "t2t", size = null, waitForCompletion = true) {
 
     if (!availableModels) {
         availableModels = getAvailableModelsFromFile();
@@ -312,14 +404,28 @@ export async function sendMessage(message, model = "qwen-max-latest", chatId = n
         const userMessageId = crypto.randomUUID();
         const assistantChildId = crypto.randomUUID();
         
+        // Формируем feature_config в зависимости от типа чата
+        const featureConfig = {
+            thinking_enabled: chatType === "t2v" ? true : false,
+            output_schema: "phase"
+        };
+
+        // Для видео добавляем дополнительные параметры
+        if (chatType === "t2v") {
+            featureConfig.research_mode = "normal";
+            featureConfig.auto_thinking = true;
+            featureConfig.thinking_format = "summary";
+            featureConfig.auto_search = true;
+        }
+
         const newMessage = {
             fid: userMessageId,
             parentId: parentId,
             parent_id: parentId,
             role: "user",
             content: messageContent,
-            chat_type: "t2t",
-            sub_chat_type: "t2t",
+            chat_type: chatType,
+            sub_chat_type: chatType,
             timestamp: Math.floor(Date.now() / 1000),
             user_action: "chat",
             models: [model],
@@ -327,18 +433,16 @@ export async function sendMessage(message, model = "qwen-max-latest", chatId = n
             childrenIds: [assistantChildId],
             extra: {
                 meta: {
-                    subChatType: "t2t"
+                    subChatType: chatType
                 }
             },
-            feature_config: {
-                thinking_enabled: false,
-                output_schema: "phase"
-            }
+            feature_config: featureConfig
         };
 
         // Формируем payload для v2 API
         const payload = {
-            stream: true,
+            stream: chatType === "t2v" ? false : true,  // Video uses non-streaming
+            version: "2.1",
             incremental_output: true,
             chat_id: chatId,
             chat_mode: "normal",
@@ -360,6 +464,20 @@ export async function sendMessage(message, model = "qwen-max-latest", chatId = n
             payload.tool_choice = toolChoice || "auto";
         }
 
+        // Добавляем size для генерации изображений (t2i)
+        if (chatType === "t2i" && size) {
+            payload.size = size;
+        }
+
+        // Добавляем параметры для генерации видео (t2v)
+        if (chatType === "t2v") {
+            if (size) {
+                payload.size = size;
+            }
+            // Можно добавить duration если поддерживается API
+            // if (duration) payload.duration = duration;
+        }
+
         console.log('=== PAYLOAD V2 ===\n' + JSON.stringify(payload, null, 2));
         console.log(`Отправка сообщения в чат ${chatId} с parent_id: ${parentId || 'null'}`);
 
@@ -373,7 +491,7 @@ export async function sendMessage(message, model = "qwen-max-latest", chatId = n
         console.log(`Используем токен: ${authToken ? 'Токен существует' : 'Токен отсутствует'}`);
         console.log(`API URL: ${apiUrl}`);
 
-        // Выполняем запрос через браузер и парсим SSE
+        // Выполняем запрос через браузер
         let response = await page.evaluate(async (data) => {
             try {
                 const token = data.token;
@@ -392,6 +510,17 @@ export async function sendMessage(message, model = "qwen-max-latest", chatId = n
                 });
 
                 if (response.ok) {
+                    // For non-streaming responses (t2v video generation)
+                    if (data.payload.stream === false) {
+                        const jsonResponse = await response.json();
+                        return {
+                            success: true,
+                            isTask: true,
+                            data: jsonResponse
+                        };
+                    }
+                    
+                    // For streaming responses (t2t, t2i)
                     const reader = response.body.getReader();
                     const decoder = new TextDecoder();
                     let buffer = '';
@@ -445,6 +574,7 @@ export async function sendMessage(message, model = "qwen-max-latest", chatId = n
 
                     return {
                         success: true,
+                        isTask: false,
                         data: {
                             id: responseId || 'chatcmpl-' + Date.now(),
                             object: 'chat.completion',
@@ -494,6 +624,141 @@ export async function sendMessage(message, model = "qwen-max-latest", chatId = n
                 })
             };
             console.log('*** Симуляция ответа RateLimited активирована ***');
+        }
+
+        // If this is a task-based response (video generation), poll for completion
+        if (response.success && response.isTask) {
+            console.log('🎬 Обнаружен ответ с задачей (video generation)');
+            logRaw(JSON.stringify(response.data));
+            
+            // Extract task_id from nested response structure
+            let taskId = null;
+            
+            // Try multiple paths to extract task_id
+            if (response.data.data && response.data.data.messages && response.data.data.messages[0]) {
+                const firstMessage = response.data.data.messages[0];
+                if (firstMessage.extra && firstMessage.extra.wanx && firstMessage.extra.wanx.task_id) {
+                    taskId = firstMessage.extra.wanx.task_id;
+                    console.log(`🎬 Task ID извлечён из extra.wanx: ${taskId}`);
+                }
+            }
+            
+            // Fallback extraction methods
+            if (!taskId && response.data.id) {
+                taskId = response.data.id;
+            } else if (!taskId && response.data.task_id) {
+                taskId = response.data.task_id;
+            } else if (!taskId && response.data.response_id) {
+                taskId = response.data.response_id;
+            } else if (!taskId && response.data.data && response.data.data.message_id) {
+                taskId = response.data.data.message_id;
+            }
+            
+            if (!taskId) {
+                console.error('❌ Task ID не найден в ответе:', response.data);
+                pagePool.releasePage(page);
+                page = null;
+                return {
+                    error: 'Task ID not found in response',
+                    chatId,
+                    rawResponse: response.data
+                };
+            }
+            
+            console.log(`🎬 Task ID: ${taskId}`);
+            
+            // If waitForCompletion is false, return task_id immediately for client-side polling
+            if (!waitForCompletion) {
+                console.log('⚡ Возвращаем task_id для опроса на стороне клиента');
+                pagePool.releasePage(page);
+                page = null;
+                
+                return {
+                    id: taskId,
+                    object: 'chat.completion.task',
+                    created: Math.floor(Date.now() / 1000),
+                    model: model,
+                    task_id: taskId,
+                    chatId: chatId,
+                    parentId: response.data.data?.parent_id || taskId,
+                    status: 'processing',
+                    message: 'Video generation task created. Use GET /api/tasks/status/:taskId to check progress.'
+                };
+            }
+            
+            console.log('📊 Начинаем polling для получения видео...');
+            
+            // Poll task status
+            const taskResult = await pollTaskStatus(taskId, page, authToken);
+            
+            if (taskResult.success && taskResult.status === 'completed') {
+                console.log('✅ Видео успешно сгенерировано!');
+                
+                // Extract video URL from task result
+                let videoUrl = null;
+                let videoContent = '';
+                
+                // Check for content directly
+                if (taskResult.data.content) {
+                    videoUrl = taskResult.data.content;
+                    videoContent = videoUrl;
+                    console.log(`📹 Видео URL: ${videoUrl}`);
+                } else if (taskResult.data.result) {
+                    if (typeof taskResult.data.result === 'string') {
+                        videoUrl = taskResult.data.result;
+                        videoContent = videoUrl;
+                    } else if (taskResult.data.result.url) {
+                        videoUrl = taskResult.data.result.url;
+                        videoContent = videoUrl;
+                    } else if (taskResult.data.result.video_url) {
+                        videoUrl = taskResult.data.result.video_url;
+                        videoContent = videoUrl;
+                    }
+                }
+                
+                // Format response similar to streaming response
+                const formattedResponse = {
+                    id: taskId,
+                    object: 'chat.completion',
+                    created: Math.floor(Date.now() / 1000),
+                    model: model,
+                    choices: [{
+                        index: 0,
+                        message: {
+                            role: 'assistant',
+                            content: videoContent || JSON.stringify(taskResult.data.result || taskResult.data)
+                        },
+                        finish_reason: 'stop'
+                    }],
+                    usage: taskResult.data.usage || {
+                        prompt_tokens: 0,
+                        output_tokens: 0,
+                        total_tokens: 0
+                    },
+                    response_id: taskId,
+                    chatId: chatId,
+                    parentId: taskId,
+                    task_id: taskId,
+                    video_url: videoUrl
+                };
+                
+                pagePool.releasePage(page);
+                page = null;
+                
+                return formattedResponse;
+            } else {
+                console.error('❌ Не удалось получить видео:', taskResult.error);
+                pagePool.releasePage(page);
+                page = null;
+                
+                return {
+                    error: taskResult.error || 'Video generation failed',
+                    status: taskResult.status,
+                    chatId,
+                    task_id: taskId,
+                    taskData: taskResult.data
+                };
+            }
         }
 
         pagePool.releasePage(page);

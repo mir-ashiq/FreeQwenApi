@@ -1,417 +1,526 @@
-# API-прокси для Qwen AI
+# Qwen AI API Proxy
 
-Локальный API-прокси сервер для работы с Qwen AI через браузерную эмуляцию. Позволяет использовать модели Qwen без официального API-ключа.
+[Русская версия](README_RU.md) | English
 
-- **Бесплатный доступ**: Используйте модели Qwen без оплаты API-ключа
-- **Полная совместимость**: Поддержка OpenAI-совместимого интерфейса для простой интеграции
-- **Возможность загрузки файлов и получение ссылки прямо из прокси**
-- **🆕 API v2**: Обновлено на новый Qwen API с улучшенной системой контекста
+A powerful local API proxy server for Qwen AI that provides free access through browser automation. Supports text chat, image analysis, image generation, and video generation.
 
-## ⚡ Обновление до API v2
+## ✨ Key Features
 
-Прокси переведён на **Qwen API v2**. Основные изменения:
+- **💬 Text Chat (t2t)**: Full conversational AI with context management
+- **🖼️ Image Generation (t2i)**: Create images from text descriptions with streaming response
+- **🎬 Video Generation (t2v)**: Generate videos from prompts with automatic task polling
+- **🔍 Image Analysis**: Analyze and describe images using vision models
+- **🔓 Free Access**: No API key required - uses browser automation
+- **🔄 Multi-Account**: Token rotation with automatic health monitoring
+- **🤝 OpenAI Compatible**: Drop-in replacement for OpenAI API
+- **📁 File Upload**: Direct file upload to Qwen CDN
+- **⚡ API v2**: Latest Qwen API with server-side chat history
 
-- ✅ История чатов хранится на серверах Qwen (не локально)
-- ✅ Новая система контекста через `parentId`
-- ✅ Автоматическое создание чатов
-- ✅ Старые эндпоинты работают с расширенным интерфейсом
+## ⚡ API v2 Update
 
-### Новые поля в ответах:
+The proxy has been updated to **Qwen API v2**. Key changes:
+
+- ✅ Chat history stored on Qwen servers (not locally)
+- ✅ New context system via `parentId`
+- ✅ Automatic chat creation
+- ✅ Old endpoints work with extended interface
+
+### New Fields in Responses:
 
 ```json
 {
-  "chatId": "a606fcac-8351-4f1f-80e7-f2f81a88e06a",  // ID чата
-  "parentId": "7f637df8-e696-43d9-94b3-40b767da117b" // Для продолжения диалога
+  "chatId": "a606fcac-8351-4f1f-80e7-f2f81a88e06a", // Chat ID
+  "parentId": "7f637df8-e696-43d9-94b3-40b767da117b" // For dialog continuation
 }
 ```
 
-### Использование:
+### Usage:
 
 ```javascript
-// Первое сообщение
-const res1 = await fetch('/api/chat', {
-  method: 'POST',
-  body: JSON.stringify({ message: "Привет!" })
+// First message
+const res1 = await fetch("/api/chat", {
+  method: "POST",
+  body: JSON.stringify({ message: "Hello!" }),
 });
 const data1 = await res1.json();
 
-// Второе сообщение с контекстом
-const res2 = await fetch('/api/chat', {
-  method: 'POST',
-  body: JSON.stringify({ 
-    message: "Как дела?",
+// Second message with context
+const res2 = await fetch("/api/chat", {
+  method: "POST",
+  body: JSON.stringify({
+    message: "How are you?",
     chatId: data1.chatId,
-    parentId: data1.parentId  // Из предыдущего ответа!
-  })
+    parentId: data1.parentId, // From previous response!
+  }),
 });
 ```
 
-## 📋 Оглавление
+## 📋 Table of Contents
 
-- [🚀 Быстрый старт](#-быстрый-старт)
-  - [Установка](#установка)
-  - [Запуск](#запуск)
-- [💡 Возможности](#-возможности)
+- [🚀 Quick Start](#-quick-start)
+  - [Installation](#installation)
+  - [Running](#running)
+- [💡 Features](#-features)
+- [🎨 Image & Video Generation](#-image--video-generation)
 - [📘 API Reference](#-api-reference)
-  - [Основные эндпоинты](#основные-эндпоинты)
-  - [Форматы запросов](#форматы-запросов)
-  - [Работа с историей диалога](#работа-с-историей-диалога)
-  - [Работа с изображениями](#работа-с-изображениями)
-  - [Загрузка файлов](#загрузка-файлов)
-  - [Управление диалогами](#управление-диалогами)
-- [📝 Примеры использования](#-примеры-использования)
-  - [Текстовые запросы](#текстовые-запросы)
-  - [Запросы с изображениями](#запросы-с-изображениями)
-  - [Примеры через Postman](#примеры-через-postman)
-- [🔄 Работа с контекстом](#-работа-с-контекстом)
-- [🔌 Совместимость с OpenAI API](#-совместимость-с-openai-api)
-  - [Особенности работы](#особенности-работы)
-  - [Поддержка streaming режима](#поддержка-streaming-режима)
-  - [Примеры использования с OpenAI SDK](#примеры-использования-с-openai-sdk)
-- [🔧 Особенности реализации](#-особенности-реализации)
+  - [Main Endpoints](#main-endpoints)
+  - [Request Formats](#request-formats)
+  - [Working with Dialog History](#working-with-dialog-history)
+  - [Working with Images](#working-with-images)
+  - [File Upload](#file-upload)
+  - [Dialog Management](#dialog-management)
+- [📝 Usage Examples](#-usage-examples)
+  - [Text Requests](#text-requests)
+  - [Requests with Images](#requests-with-images)
+  - [Examples via Postman](#examples-via-postman)
+- [🔄 Working with Context](#-working-with-context)
+- [🔌 OpenAI API Compatibility](#-openai-api-compatibility)
+  - [Operation Features](#operation-features)
+  - [Streaming Mode Support](#streaming-mode-support)
+  - [Usage Examples with OpenAI SDK](#usage-examples-with-openai-sdk)
+- [🔧 Implementation Features](#-implementation-features)
 
 ---
 
-## 1. Быстрый старт
+## 1. Quick Start
 
-### 1.1 Установка
+### 1.1 Installation
 
-1. Клонировать репозиторий
-2. Установить зависимости:
+1. Clone the repository
+2. Install dependencies:
 
 ```bash
 npm install
 ```
 
-### 1.2 Запуск
+### 1.2 Running
 
 ```bash
 npm start
 ```
 
-Также доступен файл быстрого запуска:
+Quick launch file is also available:
 
 ```
 start.bat
 ```
 
-### 1.3 Запуск в Docker
+### 1.3 Running in Docker
 
-1. Выполните авторизацию и соберите токены:
+1. Complete authorization and collect tokens:
 
 ```bash
 npm run auth
 ```
 
-2. После сохранения токенов в папке `session/` запустите контейнер:
+2. After saving tokens to the `session/` folder, start the container:
 
 ```bash
 docker compose up --build -d
 ```
 
-3. Приложение будет доступно на `http://localhost:3264/api`.
+3. The application will be available at `http://localhost:3264/api`.
 
-> ⚙️ Контейнер запускается с переменной `SKIP_ACCOUNT_MENU=true`, поэтому интерактивное меню не блокирует старт. Папки `session/`, `logs/` и `uploads/` примонтированы в контейнер как тома, что позволяет повторно использовать сохранённые токены и журналы.
+> ⚙️ The container starts with the `SKIP_ACCOUNT_MENU=true` variable, so the interactive menu does not block startup. The `session/`, `logs/`, and `uploads/` folders are mounted as volumes, allowing you to reuse saved tokens and logs.
 
 ---
 
-## 2. Авторизация через API-ключи
+## 2. Authorization via API Keys
 
-> ⚠️ **Важно:** если файл `src/Authorization.txt` пустой, авторизация **отключена**.
+> ⚠️ **Important:** if the `src/Authorization.txt` file is empty, authorization is **disabled**.
 
-1. **Файл `src/Authorization.txt`**
-   - Создаётся автоматически при первом запуске *если его нет*.
-   - Внутри уже есть подробный шаблон-инструкция.
-   - Один токен **на строку**. Пустые строки и строки, начинающиеся с `#`, игнорируются.
+1. **File `src/Authorization.txt`**
+   - Created automatically on first run _if it doesn't exist_.
+   - Contains detailed template instructions.
+   - One token **per line**. Empty lines and lines starting with `#` are ignored.
 
-2. **Отключить авторизацию** – оставьте файл пустым. Middleware пропустит все запросы.
+2. **Disable authorization** – leave the file empty. Middleware will pass all requests.
 
-3. **Проверка на стороне клиента**
+3. **Client-side verification**
 
-   Отправляйте HTTP-заголовок:
+   Send HTTP header:
 
    ```http
    Authorization: Bearer <your_token>
    ```
 
-   Пример cURL:
+   cURL example:
 
    ```bash
    curl -X POST http://localhost:3264/api/chat \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer my-secret-token-123" \
-        -d '{"message":"Привет"}'
+        -d '{"message":"Hello"}'
    ```
 
 ---
 
-## 3. Управление аккаунтами (Multi-Account)
+## 3. Account Management (Multi-Account)
 
-При старте `npm start` появляется интерактивное меню:
+When starting `npm start`, an interactive menu appears:
 
 ```
-Список аккаунтов:
- N | ID                | Статус
+Account List:
+ N | ID                | Status
  1 | acc_1752745840684 | ✅ OK
  2 | acc_1752745890062 | ❌ INVALID
 
-=== Меню ===
-1 - Добавить новый аккаунт
-2 - Перелогинить аккаунт с истекшим токеном
-3 - Запустить прокси (Enter по умолчанию)
-4 - Удалить аккаунт
+=== Menu ===
+1 - Add new account
+2 - Re-login expired account
+3 - Start proxy (default with Enter)
+4 - Delete account
 ```
 
-Статусы:
+Statuses:
 
-| Значок | Значение | Поведение |
-|--------|----------|-----------|
-| ✅ OK  | токен активен | используется в ротации |
-| ⏳ WAIT | токен временно заблокирован (RateLimited) | пропускается до истечения тайм-аута |
-| ❌ INVALID | токен просрочен (401 Unauthorized) | недоступен, выберите пункт 2 для повторного входа |
+| Icon       | Meaning                                 | Behavior                                 |
+| ---------- | --------------------------------------- | ---------------------------------------- |
+| ✅ OK      | token active                            | used in rotation                         |
+| ⏳ WAIT    | token temporarily blocked (RateLimited) | skipped until timeout expires            |
+| ❌ INVALID | token expired (401 Unauthorized)        | unavailable, choose option 2 to re-login |
 
-Пункты меню:
+Menu items:
 
-1. **Добавить новый аккаунт** – откроется браузер, авторизуйтесь, токен будет сохранён.
-2. **Перелогинить аккаунт с истекшим токеном** – выберите нужный ID, откроется браузер для повторного входа, статус сменится на ✅.
-3. **Запустить прокси** – доступно, если есть хотя бы один статус ✅ или ⏳.
-4. **Удалить аккаунт** – полностью удаляет токен и папку сессии.
+1. **Add new account** – browser opens, authorize, token will be saved.
+2. **Re-login expired account** – choose needed ID, browser opens for re-login, status changes to ✅.
+3. **Start proxy** – available if at least one ✅ or ⏳ status exists.
+4. **Delete account** – completely removes token and session folder.
 
-Файлы:
+Files:
 
-- `session/accounts/<id>/token.txt` – токен аккаунта
-- `session/tokens.json` – реестр аккаунтов и состояний
-- `npm run auth` – отдельный скрипт для управления аккаунтами без запуска сервера (то же меню, плюс CLI-аргументы `--list`, `--add`, `--relogin`, `--remove`)
-
----
-
-## ⚙️ Переменные окружения
-
-| Переменная | Значение по умолчанию | Назначение |
-|------------|------------------------|------------|
-| `PORT` | `3264` | Порт HTTP-сервера |
-| `HOST` | `0.0.0.0` | Адрес привязки сервера |
-| `SKIP_ACCOUNT_MENU` | `false` | При значении `true` отключает интерактивное меню запуска (нужно для Docker/CI) |
-
-> `SKIP_ACCOUNT_MENU` автоматически активирован в Docker Compose. Если при старте нет валидных токенов, сервер завершит работу с подсказкой запустить `npm run auth`.
+- `session/accounts/<id>/token.txt` – account token
+- `session/tokens.json` – account and state registry
+- `npm run auth` – separate script for managing accounts without starting server (same menu, plus CLI arguments `--list`, `--add`, `--relogin`, `--remove`)
 
 ---
 
-Автоматическая ротация:
+## ⚙️ Environment Variables
 
-- запросы распределяются по токенам циклически.
-- При ответе **429 RateLimited** токен получает ⏳ WAIT на указанное время.
-- При ответе **401 Unauthorized** токен помечается ❌ INVALID.
-- Если все токены недействительны – прокси завершает работу, запустите его и перелогиньтесь.
+| Variable            | Default Value | Purpose                                                               |
+| ------------------- | ------------- | --------------------------------------------------------------------- |
+| `PORT`              | `3264`        | HTTP server port                                                      |
+| `HOST`              | `0.0.0.0`     | Server binding address                                                |
+| `SKIP_ACCOUNT_MENU` | `false`       | When `true`, disables interactive startup menu (needed for Docker/CI) |
+
+> `SKIP_ACCOUNT_MENU` is automatically activated in Docker Compose. If there are no valid tokens at startup, the server will exit with a prompt to run `npm run auth`.
 
 ---
 
-## 4. Возможности
+Automatic rotation:
 
-Этот проект позволяет:
+- Requests are distributed across tokens cyclically.
+- On **429 RateLimited** response, token gets ⏳ WAIT for specified time.
+- On **401 Unauthorized** response, token is marked ❌ INVALID.
+- If all tokens are invalid – proxy exits, restart it and re-login.
 
-- Использовать модели Qwen AI через локальный API
-- Сохранять контекст диалогов между запросами
-- Управлять диалогами через API
-- Выбирать различные модели Qwen для генерации ответов
-- Отправлять изображения для анализа моделью
-- Использовать OpenAI-совместимый API с поддержкой streaming режима
+---
+
+## 4. Features
+
+This project allows you to:
+
+- Use Qwen AI models through local API
+- Save dialog context between requests
+- Manage dialogs via API
+- Choose different Qwen models for response generation
+- Send images for model analysis
+- **🎨 Generate images from text descriptions (Text-to-Image)**
+- **🎬 Generate videos from text descriptions (Text-to-Video)**
+- Use OpenAI-compatible API with streaming mode support
+
+---
+
+## 🎨 Image & Video Generation
+
+The proxy supports three types of content generation through the `chatType` parameter:
+
+| Type         | Chat Type       | Description                | Response Method | Time    |
+| ------------ | --------------- | -------------------------- | --------------- | ------- |
+| **💬 Text**  | `t2t` (default) | Standard conversational AI | Streaming SSE   | ~2-5s   |
+| **🖼️ Image** | `t2i`           | Text-to-Image generation   | Streaming SSE   | ~10-20s |
+| **🎬 Video** | `t2v`           | Text-to-Video generation   | Task polling    | ~30-60s |
+
+### Quick Examples
+
+**Text Chat (default):**
+
+```javascript
+POST /api/chat
+{
+  "message": "What is artificial intelligence?",
+  "model": "qwen-max-latest"
+}
+```
+
+**Image Generation:**
+
+```javascript
+POST /api/chat
+{
+  "message": "A beautiful sunset over the ocean",
+  "chatType": "t2i",
+  "size": "16:9"
+}
+```
+
+**Video Generation:**
+
+```javascript
+POST /api/chat
+{
+  "message": "Ocean waves gently rolling onto a beach",
+  "chatType": "t2v",
+  "size": "16:9",
+  "waitForCompletion": true  // false for client-side polling
+}
+```
+
+**Polling Modes:**
+- `waitForCompletion: true` (default) - Server polls, returns complete video URL
+- `waitForCompletion: false` - Returns task_id immediately for client-side polling
+
+### Response Formats
+
+**Text/Image** (Streaming):
+
+```json
+{
+  "choices": [
+    {
+      "message": {
+        "content": "Response text or image URL"
+      }
+    }
+  ],
+  "chatId": "...",
+  "parentId": "..."
+}
+```
+
+**Video** (After polling):
+
+```json
+{
+  "choices": [
+    {
+      "message": {
+        "content": "https://cdn.qwenlm.ai/.../video.mp4"
+      }
+    }
+  ],
+  "video_url": "https://cdn.qwenlm.ai/.../video.mp4",
+  "task_id": "..."
+}
+```
+
+### Key Differences
+
+- **Text & Image**: Use streaming (SSE) - immediate gradual response
+- **Video**: Non-streaming with task polling
+  - **Server-side** (default): Automatic polling, returns complete video URL (~30-60s wait)
+  - **Client-side**: Returns task_id immediately, client polls `/api/tasks/status/:taskId`
+
+**📖 For detailed documentation and examples, see: [IMAGE_VIDEO_GENERATION_GUIDE.md](IMAGE_VIDEO_GENERATION_GUIDE.md)**
 
 ---
 
 ## 5. API Reference
 
-### 5.1 Основные эндпоинты
+### 5.1 Main Endpoints
 
-| Эндпоинт | Метод | Описание |
-|----------|-------|----------|
-| `/api/chat` | POST | Отправка сообщения с поддержкой `chatId` и `parentId` |
-| `/api/chat/completions` | POST | OpenAI-совместимый эндпоинт, возвращает `chatId`/`parentId` |
-| `/api/models` | GET | Получение списка доступных моделей |
-| `/api/status` | GET | Проверка статуса авторизации и аккаунтов |
-| `/api/files/upload` | POST | Загрузка изображения для использования в запросах |
-| `/api/chats` | POST | Создание нового чата на серверах Qwen |
+| Endpoint                    | Method | Description                                             |
+| --------------------------- | ------ | ------------------------------------------------------- |
+| `/api/chat`                 | POST   | Send message with `chatId` and `parentId` support       |
+| `/api/chat/completions`     | POST   | OpenAI-compatible endpoint, returns `chatId`/`parentId` |
+| `/api/models`               | GET    | Get list of available models                            |
+| `/api/status`               | GET    | Check authorization and account status                  |
+| `/api/files/upload`         | POST   | Upload image for use in requests                        |
+| `/api/chats`                | POST   | Create new chat on Qwen servers                         |
+| `/api/tasks/status/:taskId` | GET    | Check video generation task status (manual polling)     |
 
-**⚠️ Удалённые эндпоинты (v2):**
-- `GET /api/chats` - список чатов
-- `GET /api/chats/:chatId` - история чата
-- `DELETE /api/chats/:chatId` - удаление чата
-- `PUT /api/chats/:chatId/rename` - переименование
-- `POST /api/chats/cleanup` - автоудаление
+**⚠️ Removed Endpoints (v2):**
 
-*Причина: чаты теперь управляются на серверах Qwen*
+- `GET /api/chats` - chat list (now managed by Qwen servers)
+- `GET /api/chats/:chatId` - chat history (now managed by Qwen servers)
+- `DELETE /api/chats/:chatId` - delete chat
+- `PUT /api/chats/:chatId/rename` - rename
+- `POST /api/chats/cleanup` - auto-delete
 
-### 5.2 Выбор эндпоинтов
+_Reason: chats are now managed on Qwen servers_
 
-Эндпоинт | Использование контекста | Формат запроса | Совместимость |
-----------|------------------------|----------------|---------------|
-**`/api/chat`** | Контекст управляется через `chatId` + `parentId`. История хранится на серверах Qwen. | Упрощённый `message` + `chatId` + `parentId` | Нативный для прокси |
-**`/api/chat/completions`** | Поддерживает `chatId` + `parentId` в запросе. Возвращает их в ответе для продолжения. | Массив `messages` (OpenAI format) + опционально `chatId`/`parentId` | OpenAI SDK |
+### 5.2 Endpoint Selection
 
-### 5.3 Форматы запросов
+| Endpoint                    | Context Usage                                                                         | Request Format                                                  | Compatibility   |
+| --------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------- | --------------- |
+| **`/api/chat`**             | Context managed via `chatId` + `parentId`. History stored on Qwen servers.            | Simplified `message` + `chatId` + `parentId`                    | Native to proxy |
+| **`/api/chat/completions`** | Supports `chatId` + `parentId` in request. Returns them in response for continuation. | `messages` array (OpenAI format) + optional `chatId`/`parentId` | OpenAI SDK      |
 
-#### 1. Упрощенный формат с параметром `message`
+### 5.3 Request Formats
 
-```json
-{
-  "message": "Текст сообщения",
-  "model": "qwen-max-latest",
-  "chatId": "идентификатор_чата",
-  "parentId": "response_id_из_предыдущего_ответа"
-}
-```
-
-#### 2. Формат, совместимый с OpenAI API
+#### 1. Simplified format with `message` parameter
 
 ```json
 {
-  "messages": [
-    {"role": "user", "content": "Привет, как дела?"}
-  ],
+  "message": "Message text",
   "model": "qwen-max-latest",
-  "chatId": "идентификатор_чата",
-  "parentId": "response_id_из_предыдущего_ответа"
+  "chatId": "chat_identifier",
+  "parentId": "response_id_from_previous_response"
 }
 ```
 
-### 5.4 Работа с контекстом (API v2)
+#### 2. OpenAI API Compatible Format
 
-**Новая система:**
-- История хранится на серверах Qwen, не локально
-- Контекст управляется через `chatId` + `parentId`
-- `parentId` - это `response_id` из предыдущего ответа
+```json
+{
+  "messages": [{ "role": "user", "content": "Hello, how are you?" }],
+  "model": "qwen-max-latest",
+  "chatId": "chat_identifier",
+  "parentId": "response_id_from_previous_response"
+}
+```
 
-**Пример диалога:**
+### 5.4 Working with Context (API v2)
+
+**New system:**
+
+- History stored on Qwen servers, not locally
+- Context managed via `chatId` + `parentId`
+- `parentId` is the `response_id` from previous response
+
+**Dialog example:**
 
 ```javascript
-// 1. Первое сообщение
-const res1 = await fetch('/api/chat', {
-  method: 'POST',
-  body: JSON.stringify({ message: "Сколько будет 2+2?" })
+// 1. First message
+const res1 = await fetch("/api/chat", {
+  method: "POST",
+  body: JSON.stringify({ message: "What is 2+2?" }),
 });
 const data1 = await res1.json();
-// Ответ: { chatId: "abc-123", parentId: "xyz-789", ... }
+// Response: { chatId: "abc-123", parentId: "xyz-789", ... }
 
-// 2. Второе сообщение (с контекстом)
-const res2 = await fetch('/api/chat', {
-  method: 'POST',
-  body: JSON.stringify({ 
-    message: "А результат плюс 3?",
-    chatId: data1.chatId,      // Тот же чат
-    parentId: data1.parentId    // Из предыдущего ответа!
-  })
+// 2. Second message (with context)
+const res2 = await fetch("/api/chat", {
+  method: "POST",
+  body: JSON.stringify({
+    message: "And the result plus 3?",
+    chatId: data1.chatId, // Same chat
+    parentId: data1.parentId, // From previous response!
+  }),
 });
-// Модель помнит контекст и ответит "7"
+// Model remembers context and will answer "7"
 ```
 
-### 5.5 Системные инструкции (System Messages)
+### 5.5 System Instructions (System Messages)
 
-**Новое в v2:** Поддержка системных сообщений для настройки поведения модели!
+**New in v2:** Support for system messages to configure model behavior!
 
-Системные инструкции передаются через поле `role: "system"` в массиве `messages`. Это позволяет задать модели контекст, стиль общения, правила поведения и т.д.
+System instructions are passed via the `role: "system"` field in the `messages` array. This allows you to set the model's context, communication style, behavior rules, etc.
 
-**Пример:**
+**Example:**
 
 ```javascript
-// Запрос с системной инструкцией
-const response = await fetch('/api/chat/', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+// Request with system instruction
+const response = await fetch("/api/chat/", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
     messages: [
       {
         role: "system",
-        content: "Ты - опытный программист на Python. Отвечай кратко и предоставляй примеры кода."
+        content:
+          "You are an experienced Python programmer. Answer briefly and provide code examples.",
       },
       {
         role: "user",
-        content: "Как отсортировать список в Python?"
-      }
+        content: "How to sort a list in Python?",
+      },
     ],
-    model: "qwen-max-latest"
-  })
+    model: "qwen-max-latest",
+  }),
 });
 ```
 
-**Как работает:**
-- `system` message извлекается из массива и передаётся отдельным параметром в Qwen API v2
-- Может использоваться в обоих эндпоинтах: `/api/chat` и `/api/chat/completions`
-- System message применяется ко всему чату и влияет на все последующие ответы
+**How it works:**
 
-**Примеры использования:**
+- `system` message is extracted from the array and passed as a separate parameter to Qwen API v2
+- Can be used in both endpoints: `/api/chat` and `/api/chat/completions`
+- System message applies to the entire chat and affects all subsequent responses
+
+**Usage examples:**
 
 ```json
-// 1. Ролевая инструкция
+// 1. Role instruction
 {
   "messages": [
-    {"role": "system", "content": "Ты - эксперт по машинному обучению"},
-    {"role": "user", "content": "Объясни, что такое градиентный спуск"}
+    {"role": "system", "content": "You are a machine learning expert"},
+    {"role": "user", "content": "Explain what gradient descent is"}
   ]
 }
 
-// 2. Стиль ответов
+// 2. Response style
 {
   "messages": [
-    {"role": "system", "content": "Отвечай как пират"},
-    {"role": "user", "content": "Как дела?"}
+    {"role": "system", "content": "Answer like a pirate"},
+    {"role": "user", "content": "How are you?"}
   ]
 }
 
-// 3. Формат вывода
+// 3. Output format
 {
   "messages": [
-    {"role": "system", "content": "Всегда отвечай в формате JSON"},
-    {"role": "user", "content": "Дай информацию о Python"}
+    {"role": "system", "content": "Always respond in JSON format"},
+    {"role": "user", "content": "Give me information about Python"}
   ]
 }
 ```
 
-### 5.6 Работа с изображениями
+### 5.6 Working with Images
 
-Прокси поддерживает отправку сообщений с изображениями:
+The proxy supports sending messages with images:
 
-#### Формат `message` с изображением
+#### `message` format with image
 
 ```json
 {
   "message": [
     {
       "type": "text",
-      "text": "Опишите объекты на этом изображении"
+      "text": "Describe the objects in this image"
     },
     {
       "type": "image",
-      "image": "URL_ИЗОБРАЖЕНИЯ"
+      "image": "IMAGE_URL"
     }
   ],
   "model": "qwen-vl-max",
-  "chatId": "идентификатор_чата",
+  "chatId": "chat_identifier",
   "parentId": "response_id"
 }
 ```
 
-### 5.7 Загрузка файлов
+### 5.7 File Upload
 
-#### Загрузка изображения
+#### Image Upload
 
 ```
 POST http://localhost:3264/api/files/upload
 ```
 
-**Формат запроса:** `multipart/form-data`
+**Request format:** `multipart/form-data`
 
-**Параметры:**
+**Parameters:**
 
-- `file` - файл изображения (поддерживаются форматы: jpg, jpeg, png, gif, webp)
+- `file` - image file (supported formats: jpg, jpeg, png, gif, webp)
 
-**Пример использования с curl:**
+**cURL usage example:**
 
 ```bash
 curl -X POST http://localhost:3264/api/files/upload \
-  -F "file=@/путь/к/изображению.jpg"
+  -F "file=@/path/to/image.jpg"
 ```
 
-**Пример ответа:**
+**Response example:**
 
 ```json
 {
@@ -419,110 +528,110 @@ curl -X POST http://localhost:3264/api/files/upload \
 }
 ```
 
-#### Получение URL изображения
+#### Getting Image URL
 
-Для отправки изображений через API прокси необходимо сначала получить URL изображения. Это можно сделать двумя способами:
+To send images via API proxy, you must first get the image URL. This can be done in two ways:
 
-##### Способ 1: Загрузка через API прокси
+##### Method 1: Upload via API Proxy
 
-Отправьте POST запрос на эндпоинт `/api/files/upload` для загрузки изображения, как описано выше.
+Send a POST request to the `/api/files/upload` endpoint to upload an image, as described above.
 
-##### Способ 2: Получение URL через веб-интерфейс Qwen
+##### Method 2: Get URL via Qwen Web Interface
 
-1. Загрузите изображение в официальном веб-интерфейсе Qwen (<https://chat.qwen.ai/>)
-2. Откройте инструменты разработчика в браузере (F12 или Ctrl+Shift+I)
-3. Перейдите на вкладку "Network" (Сеть)
-4. Найдите запрос к API Qwen, содержащий ваше изображение (обычно это запрос GetsToken)
-5. В теле запроса найдите URL изображения, который выглядит примерно так: `https://cdn.qwenlm.ai/user-id/file-id_filename.jpg?key=...`
-6. Скопируйте этот URL для использования в вашем API-запросе
+1. Upload image in the official Qwen web interface (<https://chat.qwen.ai/>)
+2. Open browser developer tools (F12 or Ctrl+Shift+I)
+3. Go to "Network" tab
+4. Find the request to Qwen API containing your image (usually a GetsToken request)
+5. In the request body, find the image URL that looks like: `https://cdn.qwenlm.ai/user-id/file-id_filename.jpg?key=...`
+6. Copy this URL for use in your API request
 
-### 5.7 Управление диалогами
+### 5.8 Dialog Management
 
-#### Создание нового диалога
+#### Create New Dialog
 
 ```
 POST http://localhost:3264/api/chats
 ```
 
-**Тело запроса:**
+**Request body:**
 
 ```json
 {
-  "name": "Название диалога"
+  "name": "Dialog name"
 }
 ```
 
-**Ответ:**
+**Response:**
 
 ```json
 {
-  "chatId": "уникальный_идентификатор"
+  "chatId": "unique_identifier"
 }
 ```
 
-#### Получение списка всех диалогов
+#### Get List of All Dialogs
 
 ```
 GET http://localhost:3264/api/chats
 ```
 
-#### Получение истории диалога
+#### Get Dialog History
 
 ```
 GET http://localhost:3264/api/chats/:chatId
 ```
 
-#### Удаление диалога
+#### Delete Dialog
 
 ```
 DELETE http://localhost:3264/api/chats/:chatId
 ```
 
-#### Переименование диалога
+#### Rename Dialog
 
 ```
 PUT http://localhost:3264/api/chats/:chatId/rename
 ```
 
-**Тело запроса:**
+**Request body:**
 
 ```json
 {
-  "name": "Новое название чата"
+  "name": "New chat name"
 }
 ```
 
-#### Автоматическое удаление диалогов
+#### Automatic Dialog Deletion
 
 ```
 POST http://localhost:3264/api/chats/cleanup
 ```
 
-**Тело запроса** (все параметры опциональны):
+**Request body** (all parameters optional):
 
 ```json
 {
-  "olderThan": 604800000, // Удалить чаты старше указанного времени (в мс), например 7 дней
-  "userMessageCountLessThan": 3, // Удалить чаты с менее чем 3 сообщениями от пользователя
-  "messageCountLessThan": 5, // Удалить чаты с менее чем 5 сообщениями всего
-  "maxChats": 50 // Оставить только 50 самых новых чатов
+  "olderThan": 604800000, // Delete chats older than specified time (in ms), e.g., 7 days
+  "userMessageCountLessThan": 3, // Delete chats with less than 3 user messages
+  "messageCountLessThan": 5, // Delete chats with less than 5 total messages
+  "maxChats": 50 // Keep only 50 newest chats
 }
 ```
 
 ---
 
-## 6. Примеры использования
+## 6. Usage Examples
 
-### Текстовые запросы
+### Text Requests
 
 <details>
-<summary>▶️ Пример простого текстового запроса</summary>
+<summary>▶️ Simple text request example</summary>
 
 ```bash
 curl -X POST http://localhost:3264/api/chat \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "Что такое искусственный интеллект?",
+    "message": "What is artificial intelligence?",
     "model": "qwen-max-latest"
   }'
 ```
@@ -530,14 +639,14 @@ curl -X POST http://localhost:3264/api/chat \
 </details>
 
 <details>
-<summary>▶️ Пример запроса в формате официального API</summary>
+<summary>▶️ Official API format request example</summary>
 
 ```bash
 curl -X POST http://localhost:3264/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [
-      {"role": "user", "content": "Что такое искусственный интеллект?"}
+      {"role": "user", "content": "What is artificial intelligence?"}
     ],
     "model": "qwen-max-latest"
   }'
@@ -545,25 +654,25 @@ curl -X POST http://localhost:3264/api/chat \
 
 </details>
 
-### Запросы с изображениями
+### Requests with Images
 
 <details>
-<summary>▶️ Пример загрузки изображения и отправки запроса с ним</summary>
+<summary>▶️ Upload image and send request with it example</summary>
 
 ```bash
-# Шаг 1: Загрузка изображения
+# Step 1: Upload image
 UPLOAD_RESPONSE=$(curl -s -X POST http://localhost:3264/api/files/upload \
-  -F "file=@/путь/к/изображению.jpg")
+  -F "file=@/path/to/image.jpg")
 
-# Шаг 2: Извлечение URL изображения
+# Step 2: Extract image URL
 IMAGE_URL=$(echo $UPLOAD_RESPONSE | grep -o '"imageUrl":"[^"]*"' | sed 's/"imageUrl":"//;s/"//')
 
-# Шаг 3: Отправка запроса с изображением
+# Step 3: Send request with image
 curl -X POST http://localhost:3264/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "message": [
-      { "type": "text", "text": "Опишите объекты на этом изображении" },
+      { "type": "text", "text": "Describe the objects in this image" },
       { "type": "image", "image": "'$IMAGE_URL'" }
     ],
     "model": "qwen3-235b-a22b"
@@ -572,20 +681,20 @@ curl -X POST http://localhost:3264/api/chat \
 
 </details>
 
-### Примеры через Postman
+### Examples via Postman
 
 <details>
-<summary>▶️ Пошаговое руководство через Postman</summary>
+<summary>▶️ Step-by-step guide via Postman</summary>
 
-1. **Загрузка изображения**:
-   - Создайте новый запрос POST к `http://localhost:3264/api/files/upload`
-   - Выберите вкладку "Body"
-   - Выберите тип "form-data"
-   - Добавьте ключ "file" и выберите тип "File"
-   - Загрузите изображение, нажав на кнопку "Select Files"
-   - Нажмите "Send"
+1. **Upload Image**:
+   - Create new POST request to `http://localhost:3264/api/files/upload`
+   - Select "Body" tab
+   - Select "form-data" type
+   - Add key "file" and select "File" type
+   - Upload image by clicking "Select Files" button
+   - Click "Send"
 
-   Ответ будет содержать URL изображения:
+   Response will contain image URL:
 
    ```json
    {
@@ -593,37 +702,37 @@ curl -X POST http://localhost:3264/api/chat \
    }
    ```
 
-2. **Использование изображения в запросе**:
-   - Создайте новый запрос POST к `http://localhost:3264/api/chat`
-   - Выберите вкладку "Body"
-   - Выберите тип "raw" и формат "JSON"
-   - Вставьте следующий JSON, заменив `URL_ИЗОБРАЖЕНИЯ` на полученный URL:
+2. **Use Image in Request**:
+   - Create new POST request to `http://localhost:3264/api/chat`
+   - Select "Body" tab
+   - Select "raw" type and "JSON" format
+   - Paste the following JSON, replacing `IMAGE_URL` with the obtained URL:
 
    ```json
    {
      "message": [
        {
          "type": "text",
-         "text": "Опишите объекты на этом изображении"
+         "text": "Describe the objects in this image"
        },
        {
          "type": "image",
-         "image": "URL_ИЗОБРАЖЕНИЯ"
+         "image": "IMAGE_URL"
        }
      ],
      "model": "qwen3-235b-a22b"
    }
    ```
 
-   - Нажмите "Send"
+   - Click "Send"
 
-#### Использование OpenAI-совместимого эндпоинта
+#### Using OpenAI-compatible Endpoint
 
-1. **Запрос через OpenAI-совместимый эндпоинт**:
-   - Создайте новый запрос POST к `http://localhost:3264/api/chat/completions`
-   - Выберите вкладку "Body"
-   - Выберите тип "raw" и формат "JSON"
-   - Вставьте следующий JSON, заменив `URL_ИЗОБРАЖЕНИЯ` на полученный URL:
+1. **Request via OpenAI-compatible endpoint**:
+   - Create new POST request to `http://localhost:3264/api/chat/completions`
+   - Select "Body" tab
+   - Select "raw" type and "JSON" format
+   - Paste the following JSON, replacing `IMAGE_URL` with the obtained URL:
 
    ```json
    {
@@ -633,11 +742,11 @@ curl -X POST http://localhost:3264/api/chat \
          "content": [
            {
              "type": "text",
-             "text": "Опиши, что изображено на этой картинке?"
+             "text": "Describe what is shown in this image?"
            },
            {
              "type": "image",
-             "image": "URL_ИЗОБРАЖЕНИЯ"
+             "image": "IMAGE_URL"
            }
          ]
        }
@@ -646,31 +755,31 @@ curl -X POST http://localhost:3264/api/chat \
    }
    ```
 
-   - Нажмите "Send"
+   - Click "Send"
 
-2. **Запрос с потоковым режимом (streaming)**:
-   - Используйте тот же URL и тело запроса, но добавьте параметр `"stream": true`
-   - Примечание: для корректного отображения потока в Postman, проверьте опцию "Preserve log" в консоли
+2. **Request with streaming mode**:
+   - Use same URL and request body, but add parameter `"stream": true`
+   - Note: for correct stream display in Postman, check "Preserve log" option in console
 
 </details>
 
 ---
 
-## 🔄 Работа с контекстом
+## 🔄 Working with Context
 
-Система автоматически сохраняет историю диалога и отправляет ее в каждом запросе к API Qwen. Это позволяет моделям учитывать предыдущие сообщения при генерации ответов.
+The system automatically saves dialog history and sends it in each request to Qwen API. This allows models to consider previous messages when generating responses.
 
-### Последовательность работы с контекстом
+### Context Working Sequence
 
-1. **Первый запрос** (без указания `chatId`):
+1. **First request** (without specifying `chatId`):
 
 ```json
 {
-  "message": "Привет, как тебя зовут?"
+  "message": "Hello, what's your name?"
 }
 ```
 
-2. **Ответ** (содержит `chatId`):
+2. **Response** (contains `chatId`):
 
 ```json
 {
@@ -679,133 +788,189 @@ curl -X POST http://localhost:3264/api/chat \
 }
 ```
 
-3. **Последующие запросы** (с указанием полученного `chatId`):
+3. **Subsequent requests** (with specified obtained `chatId`):
 
 ```json
 {
-  "message": "Сколько будет 2+2?",
+  "message": "What is 2+2?",
   "chatId": "abcd-1234-5678"
 }
 ```
 
 ---
 
-## 🔌 Совместимость с OpenAI API
+## 🔌 OpenAI API Compatibility
 
-Прокси поддерживает эндпоинт, совместимый с OpenAI API для подключения клиентов, которые работают с OpenAI API:
+The proxy supports an endpoint compatible with OpenAI API for connecting clients that work with OpenAI API:
 
 ```
 POST /api/chat/completions
 ```
 
-### Особенности работы
+### Operation Features
 
-1. **Создание нового чата для каждого запроса:** Каждый запрос к `/chat/completions` создаёт новый чат в системе с именем "OpenAI API Chat".
+1. **Create new chat for each request:** Each request to `/chat/completions` creates a new chat in the system named "OpenAI API Chat".
 
-2. **Сохранение полной истории сообщений:** Все сообщения из запроса (включая системные, пользовательские и сообщения ассистента) сохраняются в истории чата.
+2. **Save full message history:** All messages from the request (including system, user, and assistant messages) are saved in chat history.
 
-3. **Поддержка системных сообщений:** Прокси корректно обрабатывает и сохраняет системные сообщения (`role: "system"`), которые часто используются для настройки поведения модели.
+3. **System message support:** The proxy correctly processes and saves system messages (`role: "system"`), which are often used to configure model behavior.
 
-**Пример запроса с системным сообщением:**
+**Request example with system message:**
 
 ```json
 {
   "messages": [
-    {"role": "system", "content": "Ты эксперт по JavaScript. Отвечай только на вопросы о JavaScript."},
-    {"role": "user", "content": "Как создать класс в JavaScript?"}
+    {
+      "role": "system",
+      "content": "You are a JavaScript expert. Answer only questions about JavaScript."
+    },
+    { "role": "user", "content": "How to create a class in JavaScript?" }
   ],
   "model": "qwen-max-latest"
 }
 ```
 
-### Поддержка streaming режима
+### Streaming Mode Support
 
-Прокси поддерживает режим потоковой передачи ответов (streaming), что позволяет получать ответы по частям в режиме реального времени:
+The proxy supports streaming response mode, which allows receiving responses in parts in real-time:
 
 ```json
 {
-  "messages": [
-    {"role": "user", "content": "Напиши длинный рассказ о космосе"}
-  ],
+  "messages": [{ "role": "user", "content": "Write a long story about space" }],
   "model": "qwen-max-latest",
   "stream": true
 }
 ```
 
-При использовании streaming режима, ответ будет возвращаться постепенно в формате Server-Sent Events (SSE), совместимом с OpenAI API.
+When using streaming mode, the response will be returned gradually in Server-Sent Events (SSE) format, compatible with OpenAI API.
 
-### Примеры использования с OpenAI SDK
+### Usage Examples with OpenAI SDK
 
 <details>
-<summary>▶️ Пример использования с OpenAI Node.js SDK</summary>
+<summary>▶️ OpenAI Node.js SDK usage example</summary>
 
 ```javascript
-// Пример использования с OpenAI Node.js SDK
-import OpenAI from 'openai';
-import fs from 'fs';
-import axios from 'axios';
+// OpenAI Node.js SDK usage example
+import OpenAI from "openai";
+import fs from "fs";
+import axios from "axios";
 
 const openai = new OpenAI({
-  baseURL: 'http://localhost:3264/api', // Базовый URL прокси
-  apiKey: 'dummy-key', // Не требуется реальный ключ, но поле обязательное для библиотеки
+  baseURL: "http://localhost:3264/api", // Proxy base URL
+  apiKey: "dummy-key", // Real key not required, but field is mandatory for library
 });
 
-// Запрос без streaming
+// Request without streaming
 const completion = await openai.chat.completions.create({
-  messages: [{ role: 'user', content: 'Привет, как дела?' }],
-  model: 'qwen-max-latest', // Используемая модель Qwen
+  messages: [{ role: "user", content: "Hello, how are you?" }],
+  model: "qwen-max-latest", // Qwen model to use
 });
 
 console.log(completion.choices[0].message);
 
-// Запрос со streaming
+// Request with streaming
 const stream = await openai.chat.completions.create({
-  messages: [{ role: 'user', content: 'Расскажи длинную историю о космосе' }],
-  model: 'qwen-max-latest',
+  messages: [{ role: "user", content: "Tell a long story about space" }],
+  model: "qwen-max-latest",
   stream: true,
 });
 
 for await (const chunk of stream) {
-  process.stdout.write(chunk.choices[0]?.delta?.content || '');
+  process.stdout.write(chunk.choices[0]?.delta?.content || "");
 }
 
-// Загрузка и использование изображения
+// Upload and use image
 async function uploadAndAnalyzeImage(imagePath) {
-  // Загрузка изображения через API прокси
+  // Upload image via API proxy
   const formData = new FormData();
-  formData.append('file', fs.createReadStream(imagePath));
-  
-  const uploadResponse = await axios.post('http://localhost:3264/api/files/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  });
-  
+  formData.append("file", fs.createReadStream(imagePath));
+
+  const uploadResponse = await axios.post(
+    "http://localhost:3264/api/files/upload",
+    formData,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+    },
+  );
+
   const imageUrl = uploadResponse.data.imageUrl;
-  
-  // Создание запроса с изображением
+
+  // Create request with image
   const completion = await openai.chat.completions.create({
     messages: [
-      { 
-        role: 'user', 
+      {
+        role: "user",
         content: [
-          { type: 'text', text: 'Опиши, что изображено на этой картинке?' },
-          { type: 'image', image: imageUrl }
-        ] 
-      }
+          { type: "text", text: "Describe what is shown in this image?" },
+          { type: "image", image: imageUrl },
+        ],
+      },
     ],
-    model: 'qwen3-235b-a22b',
+    model: "qwen3-235b-a22b",
   });
-  
+
   console.log(completion.choices[0].message.content);
 }
 
-// Использование: uploadAndAnalyzeImage('./image.jpg');
+// Usage: uploadAndAnalyzeImage('./image.jpg');
 ```
 
 </details>
 
-> **Ограничения совместимости:**
+> **Compatibility Limitations:**
 >
-> 1. Некоторые специфичные для OpenAI параметры (например, `logprobs`, `functions` и т.д.) не поддерживаются.
-> 2. Скорость потоковой передачи может отличаться от оригинального OpenAI API.
+> 1. Some OpenAI-specific parameters (e.g., `logprobs`, `functions`, etc.) are not supported.
+> 2. Streaming speed may differ from original OpenAI API.
 
 ---
+
+## 🔧 Implementation Features
+
+### Browser Emulation
+
+- Uses Puppeteer for browser automation
+- Session cookies stored in the `session/` folder
+- Automatic page refresh upon authorization token expiration
+
+### Context Management
+
+- Dialog history automatically saved locally
+- Context sent with each request to maintain conversation coherence
+- Support for creating, deleting, and managing chats
+
+### Model Support
+
+The proxy supports various Qwen models:
+
+- `qwen-max-latest` - Latest version of flagship model
+- `qwen-turbo-latest` - Fast lightweight model
+- `qwen-plus-latest` - Balanced model
+- `qwen-vl-max` - Vision model for image analysis
+- `qwen3-235b-a22b` - Advanced multimodal model
+- And others
+
+### Error Handling
+
+- Automatic retry on temporary failures
+- Detailed error logging
+- Support for multiple accounts with automatic rotation
+
+---
+
+## 📄 License
+
+This project is provided as-is for educational purposes only.
+
+## ⚠️ Disclaimer
+
+This is an unofficial proxy and is not affiliated with or endorsed by Qwen AI. Use at your own risk.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+---
+
+**Note:** This proxy requires having a valid Qwen account. Make sure to comply with Qwen's Terms of Service when using this proxy.
