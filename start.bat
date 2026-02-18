@@ -1,39 +1,39 @@
 @echo off
 chcp 65001 >nul
-title Запуск Qwen API сервера
+title Starting Qwen API Server
 
-echo Проверка наличия Node.js...
+echo Checking for Node.js...
 where node >nul 2>nul
 if %ERRORLEVEL% neq 0 (
-    echo [ОШИБКА] Node.js не установлен!
-    echo Пожалуйста, установите Node.js с сайта https://nodejs.org/
+    echo [ERROR] Node.js is not installed!
+    echo Please install Node.js from https://nodejs.org/
     pause
     exit /b 1
 )
 
-echo Проверка наличия npm...
+echo Checking for npm...
 where npm >nul 2>nul
 if %ERRORLEVEL% neq 0 (
-    echo [ОШИБКА] npm не установлен!
-    echo Пожалуйста, переустановите Node.js с сайта https://nodejs.org/
+    echo [ERROR] npm is not installed!
+    echo Please reinstall Node.js from https://nodejs.org/
     pause
     exit /b 1
 )
 
-echo Установка зависимостей...
+echo Installing dependencies...
 call npm install
 
 if %ERRORLEVEL% neq 0 (
-    echo [ОШИБКА] Не удалось установить зависимости!
+    echo [ERROR] Failed to install dependencies!
     pause
     exit /b 1
 )
 
 echo.
-echo Запуск приложения...
+echo Starting application...
 echo.
 
-:: Запуск Node.js приложения
+:: Start Node.js application
 node index.js
 
 pause 

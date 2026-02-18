@@ -105,7 +105,22 @@ Quick launch file is also available:
 start.bat
 ```
 
-### 1.3 Running in Docker
+### 1.3 Interactive API Documentation
+
+Once the server is running, access the **Swagger UI** documentation at:
+
+```
+http://localhost:3264/api-docs
+```
+
+The Swagger interface provides:
+
+- 📖 Complete API endpoint documentation
+- 🧪 Interactive request testing
+- 📋 Request/response schemas
+- ✅ Live API interaction
+
+### 1.4 Running in Docker
 
 1. Complete authorization and collect tokens:
 
@@ -125,7 +140,21 @@ docker compose up --build -d
 
 ---
 
-## 2. Authorization via API Keys
+## 2. API Documentation
+
+### Web Interface
+
+Visit **http://localhost:3264/api-docs** for complete interactive API documentation powered by Swagger UI.
+
+The documentation includes:
+
+- All available endpoints with descriptions
+- Request/response schemas
+- Interactive testing interface
+- Example requests and responses
+- Authentication requirements
+
+### Authorization via API Keys
 
 > ⚠️ **Important:** if the `src/Authorization.txt` file is empty, authorization is **disabled**.
 
@@ -277,6 +306,7 @@ POST /api/chat
 ```
 
 **Polling Modes:**
+
 - `waitForCompletion: true` (default) - Server polls, returns complete video URL
 - `waitForCompletion: false` - Returns task_id immediately for client-side polling
 

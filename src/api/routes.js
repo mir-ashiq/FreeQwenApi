@@ -1,9 +1,6 @@
-// routes.js - Модуль с маршрутами для API
+// routes.js - API routes (no browser automation)
 import express from 'express';
-import { sendMessage, getAllModels, getApiKeys, createChatV2, pollTaskStatus } from './chat.js';
-import { getAuthenticationStatus } from '../browser/browser.js';
-import { checkAuthentication } from '../browser/auth.js';
-import { getBrowserContext } from '../browser/browser.js';
+import { sendMessage, getAllModels, getApiKeys, createChatV2, pollTaskStatus, testToken } from './chat.js';
 import { logInfo, logError, logDebug } from '../logger/index.js';
 import { getMappedModel } from './modelMapping.js';
 import { getStsToken, uploadFileToQwen } from './fileUpload.js';
@@ -11,12 +8,11 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
-import { listTokens, markInvalid, markRateLimited, markValid } from './tokenManager.js';
-import { testToken } from './chat.js';
+import { listTokens, markInvalid, markRateLimited, markValid, hasValidTokens } from './tokenManager.js';
 
 const router = express.Router();
 
-// Настройка multer для загрузки файлов
+// Configure multer for file uploads
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
         const uploadDir = path.join(process.cwd(), 'uploads');
@@ -33,7 +29,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
     storage: storage,
-    limits: { fileSize: 10 * 1024 * 1024 } // 10MB макс. размер
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB max size
 });
 
 function authMiddleware(req, res, next) {
@@ -47,15 +43,15 @@ function authMiddleware(req, res, next) {
     const apiKeyHeaderPrefix = 'Bearer ';
 
     if (!authHeader || !authHeader.startsWith(apiKeyHeaderPrefix)) {
-        logError('Отсутствует или некорректный заголовок авторизации');
-        return res.status(401).json({ error: 'Требуется авторизация' });
+        logError('Missing or invalid authorization header');
+        return res.status(401).json({ error: 'Authorization required' });
     }
 
     const token = authHeader.substring(apiKeyHeaderPrefix.length).trim();
 
     if (!apiKeys.includes(token)) {
-        logError('Предоставлен недействительный API ключ');
-        return res.status(401).json({ error: 'Недействительный токен' });
+        logError('Invalid API key provided');
+        return res.status(401).json({ error: 'Invalid token' });
     }
 
     next();
@@ -69,23 +65,103 @@ router.use((req, res, next) => {
     next();
 });
 
+/**
+ * @swagger
+ * /api/chat:
+ *   post:
+ *     summary: Send a chat message (Text/Image/Video)
+ *     description: |
+ *       **Universal endpoint for all Qwen AI features:**
+ *       
+ *       - **Text Chat (t2t)**: Regular conversational AI
+ *       - **Image Generation (t2i)**: Generate images from text descriptions
+ *       - **Video Generation (t2v)**: Create videos from text prompts
+ *       
+ *       Use the `chatType` parameter to select the mode:
+ *       - `"t2t"` (default) - Text-to-text chat
+ *       - `"t2i"` - Text-to-image generation
+ *       - `"t2v"` - Text-to-video generation
+ *       
+ *       **Examples:**
+ *       ```json
+ *       // Text chat
+ *       {"message": "Hello!", "chatType": "t2t"}
+ *       
+ *       // Image generation
+ *       {"message": "A cat on the moon", "chatType": "t2i", "size": "1024x1024"}
+ *       
+ *       // Video generation
+ *       {"message": "A bird flying over mountains", "chatType": "t2v", "size": "1280x720"}
+ *       ```
+ *     tags:
+ *       - Chat
+ *       - Image Generation
+ *       - Video Generation
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ChatRequest'
+ *           examples:
+ *             textChat:
+ *               summary: Text chat (t2t)
+ *               value:
+ *                 message: "Hello! How are you?"
+ *                 model: "qwen-max-latest"
+ *                 chatType: "t2t"
+ *             imageGeneration:
+ *               summary: Image generation (t2i)
+ *               value:
+ *                 message: "A futuristic city with flying cars at sunset"
+ *                 model: "qwen-max-latest"
+ *                 chatType: "t2i"
+ *                 size: "1024x1024"
+ *             videoGeneration:
+ *               summary: Video generation (t2v)
+ *               value:
+ *                 message: "A peaceful ocean scene with waves crashing on shore"
+ *                 model: "qwen-max-latest"
+ *                 chatType: "t2v"
+ *                 size: "1280x720"
+ *                 waitForCompletion: true
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ChatResponse'
+ *       400:
+ *         description: Bad request
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 router.post('/chat', async (req, res) => {
     try {
         const { message, messages, model, chatId, parentId, chatType, size, waitForCompletion } = req.body;
 
-        // Поддержка как message, так и messages для совместимости
+        // Support both message and messages for compatibility
         let messageContent = message;
         let systemMessage = null;
 
-        // Если указан параметр messages (множественное число), используем его в приоритете
+        // If messages parameter is specified (plural), use it with priority
         if (messages && Array.isArray(messages)) {
-            // Извлекаем system message если есть
+            // Extract system message if present
             const systemMsg = messages.find(msg => msg.role === 'system');
             if (systemMsg) {
                 systemMessage = systemMsg.content;
             }
 
-            // Преобразуем формат messages в формат сообщения, понятный нашему прокси
+            // Convert messages format to our proxy's message format
             if (messages.length > 0) {
                 const lastUserMessage = messages.filter(msg => msg.role === 'user').pop();
                 if (lastUserMessage) {
@@ -99,51 +175,67 @@ router.post('/chat', async (req, res) => {
         }
 
         if (!messageContent) {
-            logError('Запрос без сообщения');
-            return res.status(400).json({ error: 'Сообщение не указано' });
+            logError('Request without message');
+            return res.status(400).json({ error: 'Message not specified' });
         }
 
-        logInfo(`Получен запрос: ${typeof messageContent === 'string' ? messageContent.substring(0, 50) + (messageContent.length > 50 ? '...' : '') : 'Составное сообщение'}`);
+        logInfo(`Received request: ${typeof messageContent === 'string' ? messageContent.substring(0, 50) + (messageContent.length > 50 ? '...' : '') : 'Complex message'}`);
         if (systemMessage) {
             logInfo(`System message: ${systemMessage.substring(0, 50)}${systemMessage.length > 50 ? '...' : ''}`);
         }
         if (chatId) {
-            logInfo(`Используется chatId: ${chatId}, parentId: ${parentId || 'null'}`);
+            logInfo(`Using chatId: ${chatId}, parentId: ${parentId || 'null'}`);
         }
 
         let mappedModel = model || "qwen-max-latest";
         if (model) {
             mappedModel = getMappedModel(model);
             if (mappedModel !== model) {
-                logInfo(`Модель "${model}" заменена на "${mappedModel}"`);
+                logInfo(`Model "${model}" replaced with "${mappedModel}"`);
             }
         }
-        logInfo(`Используется модель: ${mappedModel}`);
+        logInfo(`Using model: ${mappedModel}`);
         if (chatType) {
-            const typeLabels = { t2t: 'текст', t2i: 'изображение', t2v: 'видео' };
+            const typeLabels = { t2t: 'text', t2i: 'image', t2v: 'video' };
             const typeLabel = typeLabels[chatType] || chatType;
-            logInfo(`Тип чата: ${chatType} (${typeLabel})${size ? `, размер: ${size}` : ''}`);
+            logInfo(`Chat type: ${chatType} (${typeLabel})${size ? `, size: ${size}` : ''}`);
         }
 
         const result = await sendMessage(messageContent, mappedModel, chatId, parentId, null, null, null, systemMessage, chatType || "t2t", size, waitForCompletion !== false);
 
         if (result.choices && result.choices[0] && result.choices[0].message) {
             const responseLength = result.choices[0].message.content ? result.choices[0].message.content.length : 0;
-            logInfo(`Ответ успешно сформирован для запроса, длина ответа: ${responseLength}`);
+            logInfo(`Response successfully generated for request, response length: ${responseLength}`);
         } else if (result.error) {
-            logInfo(`Получена ошибка в ответе: ${result.error}`);
+            logInfo(`Error received in response: ${result.error}`);
         }
 
         res.json(result);
     } catch (error) {
-        logError('Ошибка при обработке запроса', error);
-        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+        logError('Error processing request', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
+/**
+ * @swagger
+ * /api/models:
+ *   get:
+ *     summary: List available models
+ *     description: Get a list of all available Qwen AI models
+ *     tags:
+ *       - Models
+ *     responses:
+ *       200:
+ *         description: List of available models
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ModelsResponse'
+ */
 router.get('/models', async (req, res) => {
     try {
-        logInfo('Запрос на получение списка моделей');
+        logInfo('Request to get list of models');
         const modelsRaw = getAllModels();
 
 
@@ -158,93 +250,137 @@ router.get('/models', async (req, res) => {
             }))
         };
 
-        logInfo(`Возвращено ${openAiModels.data.length} моделей (OpenAI формат)`);
+        logInfo(`Returned ${openAiModels.data.length} models (OpenAI format)`);
         res.json(openAiModels);
     } catch (error) {
-        logError('Ошибка при получении списка моделей', error);
-        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+        logError('Error getting list of models', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
-
+/**
+ * @swagger
+ * /api/status:
+ *   get:
+ *     summary: Get token status
+ *     description: Check the status of all configured authentication tokens
+ *     tags:
+ *       - Status
+ *     responses:
+ *       200:
+ *         description: Token status information
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/StatusResponse'
+ */
 router.get('/status', async (req, res) => {
     try {
-        logInfo('Запрос статуса авторизации');
-
+        logInfo('Status check requested');
 
         const tokens = listTokens();
         const accounts = await Promise.all(tokens.map(async t => {
-            const accInfo = { id: t.id, status: 'UNKNOWN', resetAt: t.resetAt || null };
+            const accInfo = { 
+                id: t.id, 
+                name: t.name || 'Unknown',
+                status: 'UNKNOWN', 
+                resetAt: t.resetAt || null,
+                invalid: t.invalid || false
+            };
+
+            if (t.invalid) {
+                accInfo.status = 'INVALID';
+                return accInfo;
+            }
 
             if (t.resetAt) {
                 const resetTime = new Date(t.resetAt).getTime();
                 if (resetTime > Date.now()) {
-                    accInfo.status = 'WAIT';
+                    accInfo.status = 'RATE_LIMITED';
                     return accInfo;
                 }
             }
 
             const testResult = await testToken(t.token);
-            if (testResult === 'OK') {
+            if (testResult) {
                 accInfo.status = 'OK';
                 if (t.invalid || t.resetAt) markValid(t.id);
-            } else if (testResult === 'RATELIMIT') {
-                accInfo.status = 'WAIT';
-                markRateLimited(t.id, 24);
-            } else if (testResult === 'UNAUTHORIZED') {
-                accInfo.status = 'INVALID';
-                if (!t.invalid) markInvalid(t.id);
             } else {
-                accInfo.status = 'ERROR';
+                accInfo.status = 'INVALID';
+                markInvalid(t.id);
             }
             return accInfo;
         }));
 
-        const browserContext = getBrowserContext();
-        if (!browserContext) {
-            logError('Браузер не инициализирован');
-            return res.json({ authenticated: false, message: 'Браузер не инициализирован', accounts });
-        }
-
-        if (getAuthenticationStatus()) {
-            return res.json({
-                accounts
-            });
-        }
-
-        await checkAuthentication(browserContext);
-        const isAuthenticated = getAuthenticationStatus();
-        logInfo(`Статус авторизации: ${isAuthenticated ? 'активна' : 'требуется авторизация'}`);
+        const hasValid = accounts.some(acc => acc.status === 'OK');
 
         res.json({
-            authenticated: isAuthenticated,
-            message: isAuthenticated ? 'Авторизация активна' : 'Требуется авторизация',
+            authenticated: hasValid,
+            totalAccounts: accounts.length,
+            validAccounts: accounts.filter(acc => acc.status === 'OK').length,
+            message: hasValid ? 'Tokens available' : 'No valid tokens available',
             accounts
         });
     } catch (error) {
-        logError('Ошибка при проверке статуса авторизации', error);
-        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+        logError('Error checking status', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
-
+/**
+ * @swagger
+ * /api/status:
+ *   get:
+ *     summary: Get token status
+ *     description: Check the status of all configured authentication tokens
+ *     tags:
+ *       - Status
+ *     responses:
+ *       200:
+ *         description: Token status information
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/StatusResponse'
+ *//**
+ * @swagger
+ * /api/chats:
+ *   post:
+ *     summary: Create a new chat
+ *     description: Creates a new chat session and returns chatId and parentId for subsequent messages
+ *     tags:
+ *       - Chat
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/CreateChatRequest'
+ *     responses:
+ *       200:
+ *         description: Chat created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/CreateChatResponse'
+ */
 router.post('/chats', async (req, res) => {
     try {
         const { name, model } = req.body;
         const chatModel = model ? getMappedModel(model) : 'qwen-max-latest';
-        logInfo(`Создание нового чата${name ? ` с именем: ${name}` : ''}, модель: ${chatModel}`);
+        logInfo(`Creating new chat${name ? ` with name: ${name}` : ''}, model: ${chatModel}`);
         
-        const result = await createChatV2(chatModel, name || "Новый чат");
+        const result = await createChatV2(chatModel, name || "New chat");
         
         if (result.error) {
-            logError(`Ошибка создания чата: ${result.error}`);
+            logError(`Chat creation error: ${result.error}`);
             return res.status(500).json({ error: result.error });
         }
         
-        logInfo(`Создан новый чат v2 с ID: ${result.chatId}`);
+        logInfo(`Created new chat v2 with ID: ${result.chatId}`);
         res.json({ chatId: result.chatId, success: true });
     } catch (error) {
-        logError('Ошибка при создании чата', error);
-        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+        logError('Error creating chat', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -252,39 +388,62 @@ router.post('/analyze/network', (req, res) => {
     try {
         return res.json({ success: true });
     } catch (error) {
-        logError('Ошибка при анализе сети', error);
-        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+        logError('Error analyzing network', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
 })
 
+/**
+ * @swagger
+ * /api/chat/completions:
+ *   post:
+ *     summary: OpenAI-compatible chat completions
+ *     description: OpenAI-compatible endpoint for chat completions with the same request/response format
+ *     tags:
+ *       - Chat
+ *       - OpenAI Compatible
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/OpenAIChatRequest'
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ChatResponse'
+ */
 router.post('/chat/completions', async (req, res) => {
     try {
         const { messages, model, stream, tools, functions, tool_choice, chatId, parentId } = req.body;
 
-        logInfo(`Получен OpenAI-совместимый запрос${stream ? ' (stream)' : ''}`);
+        logInfo(`Received OpenAI-compatible request${stream ? ' (stream)' : ''}`);
 
         if (!messages || !Array.isArray(messages) || messages.length === 0) {
-            logError('Запрос без сообщений');
-            return res.status(400).json({ error: 'Сообщения не указаны' });
+            logError('Request without messages');
+            return res.status(400).json({ error: 'Messages not specified' });
         }
 
-        // Извлекаем system message если есть
+        // Extract system message if present
         const systemMsg = messages.find(msg => msg.role === 'system');
         const systemMessage = systemMsg ? systemMsg.content : null;
 
         const lastUserMessage = messages.filter(msg => msg.role === 'user').pop();
         if (!lastUserMessage) {
-            logError('В запросе нет сообщений от пользователя');
-            return res.status(400).json({ error: 'В запросе нет сообщений от пользователя' });
+            logError('No user messages in request');
+            return res.status(400).json({ error: 'No user messages in request' });
         }
 
         const messageContent = lastUserMessage.content;
 
         let mappedModel = model ? getMappedModel(model) : "qwen-max-latest";
         if (model && mappedModel !== model) {
-            logInfo(`Модель "${model}" заменена на "${mappedModel}"`);
+            logInfo(`Model "${model}" replaced with "${mappedModel}"`);
         }
-        logInfo(`Используется модель: ${mappedModel}`);
+        logInfo(`Using model: ${mappedModel}`);
 
         if (systemMessage) {
             logInfo(`System message: ${systemMessage.substring(0, 50)}${systemMessage.length > 50 ? '...' : ''}`);
@@ -357,7 +516,7 @@ router.post('/chat/completions', async (req, res) => {
                 res.end();
 
             } catch (error) {
-                logError('Ошибка при обработке потокового запроса', error);
+                logError('Error processing streaming request', error);
                 writeSse({
                     id: 'chatcmpl-stream',
                     object: 'chat.completion.chunk',
@@ -406,48 +565,48 @@ router.post('/chat/completions', async (req, res) => {
             res.json(openaiResponse);
         }
     } catch (error) {
-        logError('Ошибка при обработке запроса', error);
-        res.status(500).json({ error: { message: 'Внутренняя ошибка сервера', type: "server_error" } });
+        logError('Error processing request', error);
+        res.status(500).json({ error: { message: 'Internal server error', type: "server_error" } });
     }
 });
 
-// Новый маршрут для получения STS токена
+// New route for getting STS token
 router.post('/files/getstsToken', async (req, res) => {
     try {
-        logInfo(`Запрос на получение STS токена: ${JSON.stringify(req.body)}`);
+        logInfo(`Request to get STS token: ${JSON.stringify(req.body)}`);
 
         const fileInfo = req.body;
         if (!fileInfo || !fileInfo.filename || !fileInfo.filesize || !fileInfo.filetype) {
-            logError('Некорректные данные о файле');
-            return res.status(400).json({ error: 'Некорректные данные о файле' });
+            logError('Invalid file data');
+            return res.status(400).json({ error: 'Invalid file data' });
         }
 
         const stsToken = await getStsToken(fileInfo);
         res.json(stsToken);
     } catch (error) {
-        logError('Ошибка при получении STS токена', error);
-        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+        logError('Error getting STS token', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
-// Маршрут для загрузки файла - работает
+// Route for file upload - working
 router.post('/files/upload', upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
-            logError('Файл не был загружен');
-            return res.status(400).json({ error: 'Файл не был загружен' });
+            logError('File was not uploaded');
+            return res.status(400).json({ error: 'File was not uploaded' });
         }
 
-        logInfo(`Файл загружен на сервер: ${req.file.originalname} (${req.file.size} байт)`);
+        logInfo(`File uploaded to server: ${req.file.originalname} (${req.file.size} bytes)`);
 
-        // Загружаем файл в Qwen OSS хранилище
+        // Upload file to Qwen OSS storage
         const result = await uploadFileToQwen(req.file.path);
 
-        // Удаляем временный файл после успешной загрузки
+        // Delete temporary file after successful upload
         fs.unlinkSync(req.file.path);
 
         if (result.success) {
-            logInfo(`Файл успешно загружен в OSS: ${result.fileName}`);
+            logInfo(`File successfully uploaded to OSS: ${result.fileName}`);
             res.json({
                 success: true,
                 file: {
@@ -458,18 +617,18 @@ router.post('/files/upload', upload.single('file'), async (req, res) => {
                 }
             });
         } else {
-            logError(`Ошибка при загрузке файла в OSS: ${result.error}`);
-            res.status(500).json({ error: 'Ошибка при загрузке файла' });
+            logError(`Error uploading file to OSS: ${result.error}`);
+            res.status(500).json({ error: 'Error uploading file' });
         }
     } catch (error) {
-        logError('Ошибка при загрузке файла', error);
+        logError('Error uploading file', error);
 
-        // Удаляем временный файл в случае ошибки
+        // Delete temporary file in case of error
         if (req.file && req.file.path && fs.existsSync(req.file.path)) {
             fs.unlinkSync(req.file.path);
         }
 
-        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -482,11 +641,11 @@ router.get('/tasks/status/:taskId', authMiddleware, async (req, res) => {
             return res.status(400).json({ error: 'Task ID is required' });
         }
         
-        logInfo(`Запрос статуса задачи: ${taskId}`);
+        logInfo(`Request for task status: ${taskId}`);
         
         const browserContext = getBrowserContext();
         if (!browserContext) {
-            logError('Браузер не инициализирован');
+            logError('Browser not initialized');
             return res.status(503).json({ error: 'Browser not initialized' });
         }
         
@@ -523,7 +682,7 @@ router.get('/tasks/status/:taskId', authMiddleware, async (req, res) => {
         }
         
     } catch (error) {
-        logError('Ошибка при проверке статуса задачи', error);
+        logError('Error checking task status', error);
         res.status(500).json({ error: 'Internal server error', details: error.message });
     }
 });

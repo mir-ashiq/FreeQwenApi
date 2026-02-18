@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { logError } from '../logger/index.js';
+import { logError, logInfo } from '../logger/index.js';
 import { SESSION_DIR, ACCOUNTS_DIR } from '../config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -17,23 +17,95 @@ function ensureSessionDir() {
     if (!fs.existsSync(ACCOUNTS_PATH)) fs.mkdirSync(ACCOUNTS_PATH, { recursive: true });
 }
 
-export function loadTokens() {
+/**
+ * Load tokens from environment variables
+ * Supports QWEN_TOKEN (single) and QWEN_TOKENS (comma-separated)
+ */
+function loadTokensFromEnv() {
+    const envTokens = [];
+    
+    // Single token from QWEN_TOKEN
+    if (process.env.QWEN_TOKEN) {
+        const token = process.env.QWEN_TOKEN.trim();
+        if (token) {
+            envTokens.push({
+                id: 'env_token_1',
+                token: token,
+                name: 'Environment Token',
+                addedAt: new Date().toISOString(),
+                source: 'env',
+                invalid: false,
+                resetAt: null
+            });
+            logInfo('Loaded 1 token from QWEN_TOKEN environment variable');
+        }
+    }
+    
+    // Multiple tokens from QWEN_TOKENS (comma-separated)
+    if (process.env.QWEN_TOKENS) {
+        const tokens = process.env.QWEN_TOKENS
+            .split(',')
+            .map(t => t.trim())
+            .filter(t => t.length > 0);
+        
+        tokens.forEach((token, index) => {
+            envTokens.push({
+                id: `env_token_${index + 1}`,
+                token: token,
+                name: `Environment Token ${index + 1}`,
+                addedAt: new Date().toISOString(),
+                source: 'env',
+                invalid: false,
+                resetAt: null
+            });
+        });
+        
+        if (tokens.length > 0) {
+            logInfo(`Loaded ${tokens.length} token(s) from QWEN_TOKENS environment variable`);
+        }
+    }
+    
+    return envTokens;
+}
+
+/**
+ * Load tokens from session/tokens.json file
+ */
+function loadTokensFromFile() {
     ensureSessionDir();
     if (!fs.existsSync(TOKENS_FILE)) return [];
     try {
-        return JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf8'));
+        const fileTokens = JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf8'));
+        if (fileTokens.length > 0) {
+            logInfo(`Loaded ${fileTokens.length} token(s) from session/tokens.json`);
+        }
+        return fileTokens;
     } catch (e) {
-        logError('TokenManager: ошибка чтения tokens.json', e);
+        logError('TokenManager: error reading tokens.json', e);
         return [];
     }
 }
 
+/**
+ * Load all tokens (from both env and file)
+ * Environment tokens take priority
+ */
+export function loadTokens() {
+    const envTokens = loadTokensFromEnv();
+    const fileTokens = loadTokensFromFile();
+    
+    // Combine tokens, env tokens first (higher priority)
+    return [...envTokens, ...fileTokens];
+}
+
 export function saveTokens(tokens) {
     ensureSessionDir();
+    // Only save tokens that are not from environment variables
+    const fileTokens = tokens.filter(t => t.source !== 'env');
     try {
-        fs.writeFileSync(TOKENS_FILE, JSON.stringify(tokens, null, 2), 'utf8');
+        fs.writeFileSync(TOKENS_FILE, JSON.stringify(fileTokens, null, 2), 'utf8');
     } catch (e) {
-        logError('TokenManager: ошибка сохранения tokens.json', e);
+        logError('TokenManager: error saving tokens.json', e);
     }
 }
 
