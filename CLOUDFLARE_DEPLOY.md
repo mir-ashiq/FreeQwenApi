@@ -43,15 +43,24 @@ curl http://localhost:8787/api/models
 
 ### 4. Set Production Secrets
 
+**Required:**
+
 ```bash
-# Set Qwen token (required)
+# Set Qwen token (REQUIRED)
 npx wrangler secret put QWEN_TOKEN
 # Paste your token when prompted
+```
 
-# Set API keys for authorization (recommended)
+**Optional (for authorization):**
+
+```bash
+# Set API keys for authorization (OPTIONAL - skip for public access)
 npx wrangler secret put API_KEYS
 # Enter: my-secret-key-1,admin-key-xyz
+# OR leave empty/skip this step for no authorization
 ```
+
+> **💡 Tip:** If you don't set `API_KEYS`, your API will be publicly accessible without authorization. This is fine for testing but not recommended for production.
 
 ### 5. Deploy!
 
@@ -62,6 +71,14 @@ npm run deploy:worker
 You'll get a URL like: `https://qwen-api-proxy.your-subdomain.workers.dev`
 
 ### 6. Test Your Deployment
+
+**Without Authorization (if API_KEYS not set):**
+
+```bash
+curl https://qwen-api-proxy.your-subdomain.workers.dev/api/models
+```
+
+**With Authorization (if API_KEYS is set):**
 
 ```bash
 curl https://qwen-api-proxy.your-subdomain.workers.dev/api/models \

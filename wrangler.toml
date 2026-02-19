@@ -8,10 +8,14 @@ compatibility_flags = ["nodejs_compat"]
 name = "qwen-api-proxy"
 workers_dev = false
 
-# Environment Variables (configure in Cloudflare Dashboard or CLI)
-# Required:
-# - QWEN_TOKEN or QWEN_TOKENS (comma-separated)
-# - API_KEYS (optional, for proxy authorization)
+# Optional Variables (can be left empty)
+[vars]
+API_KEYS = ""  # Optional: Comma-separated API keys for authorization. Leave empty for no auth.
+
+# Required Secrets (set via: wrangler secret put QWEN_TOKEN)
+# - QWEN_TOKEN: Single Qwen authentication token
+# OR
+# - QWEN_TOKENS: Multiple tokens (comma-separated) for load balancing
 
 # Limits
 [limits]

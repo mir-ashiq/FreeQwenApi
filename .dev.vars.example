@@ -3,13 +3,18 @@
 # Copy this file to .dev.vars and add your actual values
 # IMPORTANT: Never commit .dev.vars to git!
 
-# Qwen Authentication (required)
+# ═══════════════════════════════════════════
+# REQUIRED: Qwen Authentication
+# ═══════════════════════════════════════════
 # Get your token from: https://chat.qwen.ai → F12 → Application → Local Storage → token
 QWEN_TOKEN=your-qwen-token-here
 
 # Or use multiple tokens (comma-separated)
 # QWEN_TOKENS=token1,token2,token3
 
-# Proxy Authorization (optional but recommended)
-# Comma-separated API keys that clients must provide
-API_KEYS=my-secret-key-1,admin-key-xyz
+# ═══════════════════════════════════════════
+# OPTIONAL: Proxy Authorization
+# ═══════════════════════════════════════════
+# Leave empty or remove this line for no authorization (public access)
+# Add comma-separated API keys to require authorization from clients
+API_KEYS=
