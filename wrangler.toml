@@ -3,11 +3,6 @@ main = "worker.js"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
-# Cloudflare Workers Configuration
-[env.production]
-name = "qwen-api-proxy"
-workers_dev = true
-
 # Required Environment Variables (set as secrets):
 #
 # QWEN_TOKEN - Single Qwen authentication token
