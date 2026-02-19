@@ -14,7 +14,3 @@ compatibility_flags = ["nodejs_compat"]
 # Set via: npx wrangler secret put QWEN_TOKEN
 #
 # Optional: You can add API_KEYS via dashboard later for authorization
-
-# Limits
-[limits]
-cpu_ms = 50  # Max CPU time per request (milliseconds)
